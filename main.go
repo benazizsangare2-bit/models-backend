@@ -36,6 +36,7 @@ func main() {
 	router.POST("/register/verify", handlers.VerifyEmail)       // Step 2: verify OTP
 	router.POST("/register/complete", handlers.CompleteRegistration) // Step 3: complete registration
 	router.POST("/login", handlers.LoginFunction)
+	router.POST("/contact", handlers.HandleContact)             // Contact form submission
 			 	
 	// middleware protects the route
       protected := router.Group("/api", middlewares.AuthMiddleware())
