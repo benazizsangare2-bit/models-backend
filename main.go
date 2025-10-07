@@ -79,7 +79,7 @@ func main() {
 			"message": "Welcome to the api",
 		})
 	})
-	err = router.Run(":6060")
+	err = router.Run(":6061")
 	if err != nil {
 		panic(err)
 	}
