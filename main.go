@@ -37,6 +37,10 @@ func main() {
 	router.POST("/register/complete", handlers.CompleteRegistration) // Step 3: complete registration
 	router.POST("/login", handlers.LoginFunction)
 	router.POST("/contact", handlers.HandleContact)             // Contact form submission
+	router.GET("api/hostesses/approved", handlers.GetApprovedHostesses)
+	router.GET("api/models/approved", handlers.GetApprovedModels)
+
+
 			 	
 	// ===== USER PROTECTED ROUTES =====
     protected := router.Group("/api", middlewares.AuthMiddleware())
@@ -49,7 +53,6 @@ func main() {
     protected.POST("/models/documents", handlers.AddDocuments)
     protected.POST("/models/identity-check", handlers.UploadIdentityCheck)
     protected.GET("/models/progress", handlers.GetModelProgress)
-    protected.GET("/models/approved", handlers.GetApprovedModels)
     protected.DELETE("/models/:id", handlers.DeleteModel)  // User can only delete their own
     protected.PUT("/models/:id", handlers.UpdateModel)     // User can only update their own
 
@@ -61,7 +64,6 @@ func main() {
     protected.GET("/hostesses/progress", handlers.GetHostessProgress)
     protected.DELETE("/hostesses/:id", handlers.DeleteHostess)  // User can only delete their own
     protected.PUT("/hostesses/:id", handlers.UpdateHostess)     // User can only update their own
-    protected.GET("/hostesses/approved", handlers.GetApprovedHostesses)
 }
 
 
