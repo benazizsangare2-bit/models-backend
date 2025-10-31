@@ -45,8 +45,7 @@ func GetTableQueries() []string {
    			hips INT NOT NULL,
    			hair_color VARCHAR(100) NOT NULL,
    			eye_color VARCHAR(100) NOT NULL,
-   			photo TEXT,
-   			additional_photos TEXT 
+   			photo TEXT 
 );
 `, `CREATE TABLE IF NOT EXISTS model_documents (
     		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -96,7 +95,6 @@ func GetTableQueries() []string {
     	emergency_contact_relationship VARCHAR(50),
     	emergency_contact_phone VARCHAR(20),
 
-
     	created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     	updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -120,7 +118,6 @@ func GetTableQueries() []string {
 
     	-- Media
     	photo TEXT,
-    	additional_photos TEXT[],
 
     	-- Social links
     	social_instagram TEXT,
@@ -144,6 +141,7 @@ func GetTableQueries() []string {
     	created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     	updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
 `, `CREATE TABLE IF NOT EXISTS hostess_identity_check (
     	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     	hostess_id UUID NOT NULL REFERENCES hostesses(id) ON DELETE CASCADE,
@@ -152,5 +150,19 @@ func GetTableQueries() []string {
     	created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 `,
+
+		`CREATE TABLE IF NOT EXISTS admins (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username VARCHAR(255) UNIQUE NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    full_name VARCHAR(255),
+    role VARCHAR(50) DEFAULT 'admin',
+    is_active BOOLEAN DEFAULT TRUE,
+    last_login TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    deleted BOOLEAN DEFAULT FALSE
+);`,
 	}
 }

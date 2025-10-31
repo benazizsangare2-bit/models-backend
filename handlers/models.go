@@ -7,7 +7,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
+
+	//"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -46,8 +47,7 @@ type ModelMeasurements struct {
     Waist               int    `json:"waist"`
     EyeColor            string `json:"eye_color"`
     Photo               string `json:"photo"` // Store as a comma-separated string
-    Additional_photo    string `json:"additional_photo"`
-}
+   }
 
 // Documents
 type ModelDocuments struct {
@@ -154,45 +154,48 @@ func AddMeasurements(ctx *gin.Context) {
     }
 
     // ---- Handle main photo ----
-    var mainPhotoPath string
-    mainPhoto, err := ctx.FormFile("photo")
-    if err == nil {
-        mainPhotoPath = fmt.Sprintf("%s/%d_%s", uploadDir, time.Now().UnixNano(), mainPhoto.Filename)
-        if err := ctx.SaveUploadedFile(mainPhoto, mainPhotoPath); err != nil {
-            ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save main photo"})
-            return
-        }
-    }
+    // var mainPhotoPath string
+    // mainPhoto, err := ctx.FormFile("photo")
+    // if err == nil {
+    //     mainPhotoPath = fmt.Sprintf("%s/%d_%s", uploadDir, time.Now().UnixNano(), mainPhoto.Filename)
+    //     if err := ctx.SaveUploadedFile(mainPhoto, mainPhotoPath); err != nil {
+    //         ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save main photo"})
+    //         return
+    //     }
+    // }
 
     // ---- Handle additional photos (max 5) ----
-    var additionalPhotoPaths []string
+    var mainPhotoPath []string
     form, err := ctx.MultipartForm()
-    if err == nil && form.File["additionalPhotos"] != nil {
-        photos := form.File["additionalPhotos"]
-        if len(photos) > 5 {
-            ctx.JSON(http.StatusBadRequest, gin.H{"error": "Maximum 5 additional photos allowed"})
+    if err == nil && form.File["photo"] != nil {
+        photos := form.File["photo"]
+        if len(photos) < 5 {
+            ctx.JSON(http.StatusBadRequest, gin.H{"error": "Minimum 5 photos is required from the model"})
             return
         }
 
         for _, file := range photos {
             path := fmt.Sprintf("%s/%d_%s", uploadDir, time.Now().UnixNano(), file.Filename)
             if err := ctx.SaveUploadedFile(file, path); err != nil {
-                ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save additional photo"})
+                ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to photo"})
                 return
             }
-            additionalPhotoPaths = append(additionalPhotoPaths, path)
+            mainPhotoPath = append(mainPhotoPath, path)
         }
+    } else {
+        ctx.JSON(http.StatusBadRequest, gin.H{"error": "No photos where detected. Photos are required"})
+        return
     }
 
     // ---- Insert into DB ----
     query := `
         INSERT INTO model_measurements 
-        (model_id, experience, height, weight, hips, waist, hair_color, eye_color, photo, additional_photos)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        (model_id, experience, height, weight, hips, waist, hair_color, eye_color, photo)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
     `
     _, err = database.DB.Exec(query,
         modelID, experience, height, weight, hips, waist,
-        hairColor, eyeColor, mainPhotoPath, pq.Array(additionalPhotoPaths),
+        hairColor, eyeColor, pq.Array(mainPhotoPath),
     )
     if err != nil {
         fmt.Println("DB insert error:", err)
@@ -354,7 +357,7 @@ func GetApprovedModels(ctx *gin.Context) {
             m.whatsapp, m.date_of_birth, m.gender, m.nationality, m.street, 
             m.city, m.residence_country, m.status, m.created_at, m.updated_at,
             mm.experience, mm.height, mm.weight, mm.hips, mm.waist, 
-            mm.hair_color, mm.eye_color, mm.photo, mm.additional_photos,
+            mm.hair_color, mm.eye_color, mm.photo,
             md.document_issuer_country, md.document_type, md.document_front, md.document_back,
             mic.selfie_with_id, mic.verified as identity_verified
         FROM models m
@@ -375,31 +378,31 @@ func GetApprovedModels(ctx *gin.Context) {
 
     var models []gin.H
     for rows.Next() {
-        var model gin.H
         var (
             id, userID, firstName, lastName, username, email, whatsapp string
             dateOfBirth, gender, nationality, street, city, residenceCountry, status string
             createdAt, updatedAt time.Time
-            experience, hairColor, eyeColor, photo, additionalPhotos sql.NullString
+            experience, hairColor, eyeColor sql.NullString
             height, weight, hips, waist sql.NullInt64
             docIssuerCountry, docType, docFront, docBack sql.NullString
             selfieWithID sql.NullString
             identityVerified sql.NullBool
+            photoArray []string // Change this to array
         )
 
         err := rows.Scan(
             &id, &userID, &firstName, &lastName, &username, &email, &whatsapp,
             &dateOfBirth, &gender, &nationality, &street, &city, &residenceCountry, &status,
             &createdAt, &updatedAt, &experience, &height, &weight, &hips, &waist,
-            &hairColor, &eyeColor, &photo, &additionalPhotos, &docIssuerCountry,
-            &docType, &docFront, &docBack, &selfieWithID, &identityVerified,
+            &hairColor, &eyeColor, pq.Array(&photoArray), // Use pq.Array for scanning
+            &docIssuerCountry, &docType, &docFront, &docBack, &selfieWithID, &identityVerified,
         )
         if err != nil {
             fmt.Println("Row scan error:", err)
             continue
         }
 
-        // Helper function to get string value or default
+        // Helper functions (keep your existing ones)
         getStringValue := func(value sql.NullString, defaultValue string) string {
             if value.Valid && value.String != "" {
                 return value.String
@@ -407,7 +410,6 @@ func GetApprovedModels(ctx *gin.Context) {
             return defaultValue
         }
 
-        // Helper function to get int64 value or default
         getIntValue := func(value sql.NullInt64, defaultValue int64) int64 {
             if value.Valid {
                 return value.Int64
@@ -415,7 +417,6 @@ func GetApprovedModels(ctx *gin.Context) {
             return defaultValue
         }
 
-        // Helper function to get bool value or default
         getBoolValue := func(value sql.NullBool, defaultValue bool) bool {
             if value.Valid {
                 return value.Bool
@@ -423,19 +424,15 @@ func GetApprovedModels(ctx *gin.Context) {
             return defaultValue
         }
 
-        // Get photo path or provide default
-        photoPath := getStringValue(photo, "")
-        if photoPath == "" {
-            photoPath = "/uploads/default.jpg" // Default image path using existing uploads folder
+        // Get the first photo from the array or use default
+        var firstPhoto string
+        if len(photoArray) > 0 && photoArray[0] != "" {
+            firstPhoto = photoArray[0]
+        } else {
+            firstPhoto = "/uploads/default.jpg"
         }
 
-        // Get additional photos as array
-        var additionalPhotosArray []string
-        if additionalPhotos.Valid && additionalPhotos.String != "" {
-            additionalPhotosArray = strings.Split(additionalPhotos.String, ",")
-        }
-
-        model = gin.H{
+        model := gin.H{
             "id": id,
             "user_id": userID,
             "first_name": firstName,
@@ -452,16 +449,8 @@ func GetApprovedModels(ctx *gin.Context) {
             "status": status,
             "created_at": createdAt,
             "updated_at": updatedAt,
-            // Flatten measurements for easier frontend access
-            "experience": getStringValue(experience, ""),
-            "height": getIntValue(height, 0),
-            "weight": getIntValue(weight, 0),
-            "hips": getIntValue(hips, 0),
-            "waist": getIntValue(waist, 0),
-            "hair_color": getStringValue(hairColor, ""),
-            "eye_color": getStringValue(eyeColor, ""),
-            "photo": photoPath,
-            "additional_photos": additionalPhotosArray,
+            // Use the first photo for the main photo field
+            "photo": firstPhoto,
             "measurements": gin.H{
                 "experience": getStringValue(experience, ""),
                 "height": getIntValue(height, 0),
@@ -470,8 +459,7 @@ func GetApprovedModels(ctx *gin.Context) {
                 "waist": getIntValue(waist, 0),
                 "hair_color": getStringValue(hairColor, ""),
                 "eye_color": getStringValue(eyeColor, ""),
-                "photo": photoPath,
-                "additional_photos": additionalPhotosArray,
+                "photo": photoArray, // Return the full array for measurements
             },
             "documents": gin.H{
                 "document_issuer_country": getStringValue(docIssuerCountry, ""),
@@ -483,7 +471,7 @@ func GetApprovedModels(ctx *gin.Context) {
                 "selfie_with_id": getStringValue(selfieWithID, ""),
                 "verified": getBoolValue(identityVerified, false),
             },
-        }
+        } 
         models = append(models, model)
     }
 
@@ -633,7 +621,7 @@ func AdminGetAllModels(ctx *gin.Context) {
             m.city, m.residence_country, m.status, m.registration_step, m.deleted,
             m.created_at, m.updated_at,
             mm.experience, mm.height, mm.weight, mm.hips, mm.waist, 
-            mm.hair_color, mm.eye_color, mm.photo, mm.additional_photos,
+            mm.hair_color, mm.eye_color, mm.photo,
             md.document_issuer_country, md.document_type, md.document_front, md.document_back,
             mic.selfie_with_id, mic.verified as identity_verified,
             u.fullname as user_fullname, u.email as user_email, u.phone_number as user_phone
@@ -677,7 +665,7 @@ func AdminGetAllModels(ctx *gin.Context) {
             createdAt, updatedAt time.Time
             registrationStep int
             deleted bool
-            experience, hairColor, eyeColor, photo, additionalPhotos sql.NullString
+            experience, hairColor, eyeColor, photo sql.NullString
             height, weight, hips, waist sql.NullInt64
             docIssuerCountry, docType, docFront, docBack sql.NullString
             selfieWithID sql.NullString
@@ -689,7 +677,7 @@ func AdminGetAllModels(ctx *gin.Context) {
             &id, &userID, &firstName, &lastName, &username, &email, &whatsapp,
             &dateOfBirth, &gender, &nationality, &street, &city, &residenceCountry, &status,
             &registrationStep, &deleted, &createdAt, &updatedAt, &experience, &height, &weight, 
-            &hips, &waist, &hairColor, &eyeColor, &photo, &additionalPhotos, &docIssuerCountry,
+            &hips, &waist, &hairColor, &eyeColor, &photo, &docIssuerCountry,
             &docType, &docFront, &docBack, &selfieWithID, &identityVerified,
             &userFullname, &userEmail, &userPhone,
         )
@@ -731,7 +719,6 @@ func AdminGetAllModels(ctx *gin.Context) {
                 "hair_color": hairColor.String,
                 "eye_color": eyeColor.String,
                 "photo": photo.String,
-                "additional_photos": additionalPhotos.String,
             },
             "documents": gin.H{
                 "document_issuer_country": docIssuerCountry.String,
@@ -771,18 +758,22 @@ func AdminGetAllModels(ctx *gin.Context) {
     })
 }
 
-// Admin endpoint to approve or reject a model
-func AdminApproveRejectModel(ctx *gin.Context) {
+// Separate handler for approve
+func AdminApproveModel(ctx *gin.Context) {
     modelID := ctx.Param("id")
-    action := ctx.Param("action") // approve or reject
+    handleModelStatusUpdate(ctx, modelID, "approved")
+}
 
+// Separate handler for reject  
+func AdminRejectModel(ctx *gin.Context) {
+    modelID := ctx.Param("id")
+    handleModelStatusUpdate(ctx, modelID, "rejected")
+}
+
+// Common function for status update
+func handleModelStatusUpdate(ctx *gin.Context, modelID string, newStatus string) {
     if modelID == "" {
         ctx.JSON(http.StatusBadRequest, gin.H{"error": "Model ID is required"})
-        return
-    }
-
-    if action != "approve" && action != "reject" {
-        ctx.JSON(http.StatusBadRequest, gin.H{"error": "Action must be 'approve' or 'reject'"})
         return
     }
 
@@ -813,13 +804,6 @@ func AdminApproveRejectModel(ctx *gin.Context) {
     ctx.ShouldBindJSON(&req)
 
     // Update model status
-    var newStatus string
-    if action == "approve" {
-        newStatus = "approved"
-    } else {
-        newStatus = "rejected"
-    }
-
     query := `
         UPDATE models 
         SET status = $1, updated_at = NOW() 
@@ -833,7 +817,7 @@ func AdminApproveRejectModel(ctx *gin.Context) {
         return
     }
 
-    // Log the action (you might want to create a separate admin_logs table for this)
+    // Log the action
     logMessage := fmt.Sprintf("Model %s %s by admin", modelID, newStatus)
     if req.AdminNotes != "" {
         logMessage += fmt.Sprintf(" - Notes: %s", req.AdminNotes)
@@ -847,6 +831,7 @@ func AdminApproveRejectModel(ctx *gin.Context) {
         "admin_notes": req.AdminNotes,
     })
 }
+
 
 // Admin endpoint to get a specific model by ID with complete information
 func AdminGetModelById(ctx *gin.Context) {
@@ -864,7 +849,7 @@ func AdminGetModelById(ctx *gin.Context) {
             m.city, m.residence_country, m.status, m.registration_step, m.deleted,
             m.created_at, m.updated_at,
             mm.experience, mm.height, mm.weight, mm.hips, mm.waist, 
-            mm.hair_color, mm.eye_color, mm.photo, mm.additional_photos,
+            mm.hair_color, mm.eye_color, mm.photo,
             md.document_issuer_country, md.document_type, md.document_front, md.document_back,
             mic.selfie_with_id, mic.verified as identity_verified,
             u.fullname as user_fullname, u.email as user_email, u.phone_number as user_phone
@@ -882,7 +867,8 @@ func AdminGetModelById(ctx *gin.Context) {
         createdAt, updatedAt time.Time
         registrationStep int
         deleted bool
-        experience, hairColor, eyeColor, photo, additionalPhotos sql.NullString
+        experience, hairColor, eyeColor, photo sql.NullString
+        socialInstagram, socialFacebook, socialTwitter, socialLinkedin sql.NullString
         height, weight, hips, waist sql.NullInt64
         docIssuerCountry, docType, docFront, docBack sql.NullString
         selfieWithID sql.NullString
@@ -894,7 +880,8 @@ func AdminGetModelById(ctx *gin.Context) {
         &id, &userID, &firstName, &lastName, &username, &email, &whatsapp,
         &dateOfBirth, &gender, &nationality, &street, &city, &residenceCountry, &status,
         &registrationStep, &deleted, &createdAt, &updatedAt, &experience, &height, &weight, 
-        &hips, &waist, &hairColor, &eyeColor, &photo, &additionalPhotos, &docIssuerCountry,
+        &hips, &waist, &hairColor, &eyeColor, &photo, &socialInstagram, &socialFacebook, &socialTwitter, &socialLinkedin,
+         &docIssuerCountry,
         &docType, &docFront, &docBack, &selfieWithID, &identityVerified,
         &userFullname, &userEmail, &userPhone,
     )
@@ -903,6 +890,14 @@ func AdminGetModelById(ctx *gin.Context) {
         ctx.JSON(http.StatusNotFound, gin.H{"error": "Model not found"})
         return
     }
+
+      // Helper functions
+        getStringValue := func(value sql.NullString, defaultValue string) string {
+            if value.Valid && value.String != "" {
+                return value.String
+            }
+            return defaultValue
+        }
 
     model := gin.H{
         "id": id,
@@ -937,7 +932,10 @@ func AdminGetModelById(ctx *gin.Context) {
             "hair_color": hairColor.String,
             "eye_color": eyeColor.String,
             "photo": photo.String,
-            "additional_photos": additionalPhotos.String,
+            "social_instagram":       getStringValue(socialInstagram, ""),
+            "social_facebook":        getStringValue(socialFacebook, ""),
+            "social_twitter":         getStringValue(socialTwitter, ""),
+            "social_linkedin":        getStringValue(socialLinkedin, ""),
         },
         "documents": gin.H{
             "document_issuer_country": docIssuerCountry.String,
@@ -953,5 +951,141 @@ func AdminGetModelById(ctx *gin.Context) {
 
     ctx.JSON(http.StatusOK, gin.H{
         "model": model,
+    })
+}
+
+
+// AdminUpdateModel updates model information
+func AdminUpdateModel(ctx *gin.Context) {
+    modelID := ctx.Param("id")
+    handleModelUpdate(ctx, modelID)
+}
+
+// Common function for model update
+func handleModelUpdate(ctx *gin.Context, modelID string) {
+    if modelID == "" {
+        ctx.JSON(http.StatusBadRequest, gin.H{"error": "Model ID is required"})
+        return
+    }
+
+    // Verify the model exists and is not deleted
+    var exists bool
+    err := database.DB.QueryRow(`
+        SELECT EXISTS(SELECT 1 FROM models WHERE id = $1 AND deleted = FALSE)
+    `, modelID).Scan(&exists)
+
+    if err != nil || !exists {
+        ctx.JSON(http.StatusNotFound, gin.H{"error": "Model not found"})
+        return
+    }
+
+    // Parse request body
+    var req struct {
+        FirstName         string `json:"first_name"`
+        LastName          string `json:"last_name"`
+        Username          string `json:"username"`
+        Email             string `json:"email"`
+        WhatsApp          string `json:"whatsapp"`
+        DateOfBirth       string `json:"date_of_birth"`
+        Gender            string `json:"gender"`
+        Nationality       string `json:"nationality"`
+        Street            string `json:"street"`
+        City              string `json:"city"`
+        ResidenceCountry  string `json:"residence_country"`
+        Status            string `json:"status"`
+        
+        Measurements struct {
+            Experience     string `json:"experience"`
+            Height         int    `json:"height"`
+            Weight         int    `json:"weight"`
+            Hips           int    `json:"hips"`
+            Waist          int    `json:"waist"`
+            HairColor      string `json:"hair_color"`
+            EyeColor       string `json:"eye_color"`
+            SocialInstagram string `json:"social_instagram"`
+            SocialFacebook  string `json:"social_facebook"`
+            SocialTwitter   string `json:"social_twitter"`
+            SocialLinkedin  string `json:"social_linkedin"`
+        } `json:"measurements"`
+        
+        Documents struct {
+            DocumentIssuerCountry string `json:"document_issuer_country"`
+            DocumentType         string `json:"document_type"`
+        } `json:"documents"`
+    }
+
+    if err := ctx.ShouldBindJSON(&req); err != nil {
+        ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data"})
+        return
+    }
+
+    // Start transaction
+    tx, err := database.DB.Begin()
+    if err != nil {
+        ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start transaction"})
+        return
+    }
+    defer tx.Rollback()
+
+    // Update main model table
+    _, err = tx.Exec(`
+        UPDATE models 
+        SET first_name = $1, last_name = $2, username = $3, email = $4, 
+            whatsapp = $5, date_of_birth = $6, gender = $7, nationality = $8,
+            street = $9, city = $10, residence_country = $11, status = $12,
+            updated_at = NOW()
+        WHERE id = $13
+    `, req.FirstName, req.LastName, req.Username, req.Email, req.WhatsApp,
+        req.DateOfBirth, req.Gender, req.Nationality, req.Street, req.City,
+        req.ResidenceCountry, req.Status, modelID)
+
+    if err != nil {
+        ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update model basic info"})
+        return
+    }
+
+    // Update measurements
+    _, err = tx.Exec(`
+        UPDATE model_measurements 
+        SET experience = $1, height = $2, weight = $3, hips = $4, waist = $5,
+            hair_color = $6, eye_color = $7, social_instagram = $8, 
+            social_facebook = $9, social_twitter = $10, social_linkedin = $11,
+            updated_at = NOW()
+        WHERE model_id = $12
+    `, req.Measurements.Experience, req.Measurements.Height, req.Measurements.Weight,
+        req.Measurements.Hips, req.Measurements.Waist, req.Measurements.HairColor,
+        req.Measurements.EyeColor, req.Measurements.SocialInstagram,
+        req.Measurements.SocialFacebook, req.Measurements.SocialTwitter,
+        req.Measurements.SocialLinkedin, modelID)
+
+    if err != nil {
+        ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update model measurements"})
+        return
+    }
+
+    // Update documents
+    _, err = tx.Exec(`
+        UPDATE model_documents 
+        SET document_issuer_country = $1, document_type = $2, updated_at = NOW()
+        WHERE model_id = $3
+    `, req.Documents.DocumentIssuerCountry, req.Documents.DocumentType, modelID)
+
+    if err != nil {
+        ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update model documents"})
+        return
+    }
+
+    // Commit transaction
+    if err := tx.Commit(); err != nil {
+        ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit changes"})
+        return
+    }
+
+    // Log the action
+    fmt.Printf("Model %s updated by admin\n", modelID)
+
+    ctx.JSON(http.StatusOK, gin.H{
+        "message":  "Model updated successfully",
+        "model_id": modelID,
     })
 }

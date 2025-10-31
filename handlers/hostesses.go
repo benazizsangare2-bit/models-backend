@@ -2,17 +2,43 @@ package handlers
 
 import (
 	"database/sql"
+	//"encoding/json"
 	"fmt"
 	"models/database"
 	"net/http"
 	"os"
-	"path/filepath"
+
+	//"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lib/pq"
 )
+
+type HostessExperience struct {
+    ID                string         `json:"id"`
+    HostessID         string         `json:"hostess_id"`
+    WorkExperience    string         `json:"work_experience"`
+    Languages         pq.StringArray `json:"languages"`
+    Skills            pq.StringArray `json:"skills"`
+    Availability      string         `json:"availability"`
+    PreferredEvents   pq.StringArray `json:"preferred_events"`
+    PreviousWork      string         `json:"previous_hostess_work"`
+    ReferenceContact  string         `json:"reference_contact"`
+    Height            string         `json:"height"`
+    Weight            string         `json:"weight"`
+    HairColor         string         `json:"hair_color"`
+    EyeColor          string         `json:"eye_color"`
+    Photo             string         `json:"photo"`
+    SocialInstagram   string         `json:"social_instagram"`
+    SocialFacebook    string         `json:"social_facebook"`
+    SocialTwitter     string         `json:"social_twitter"`
+    SocialLinkedin    string         `json:"social_linkedin"`
+    CreatedAt         string         `json:"created_at"`
+    UpdatedAt         string         `json:"updated_at"`
+}
+
 
 // Create Hostess
 func CreateHostess(ctx *gin.Context) {
@@ -66,7 +92,7 @@ func CreateHostess(ctx *gin.Context) {
 	).Scan(&hostessID)
 
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create hostess"})
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to submit the first step. Verify that all fields are correct and try again"})
 		fmt.Println("DB error:", err)
 		return
 	}
@@ -114,33 +140,28 @@ func AddHostessExperience(ctx *gin.Context) {
         ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create upload directory"})
         return
     }
-
-    // Handle main photo
-    var photoPath string
-    if photoFile, err := ctx.FormFile("photo"); err == nil {
-        fileName := fmt.Sprintf("%s_%d_%s", hostessID, time.Now().Unix(), photoFile.Filename)
-        dst := filepath.Join(uploadDir, fileName)
-        if err := ctx.SaveUploadedFile(photoFile, dst); err != nil {
-            ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save photo"})
+    // Handle additional photos (array, up to 10)
+    // ---- Handle additional photos (max 5) ----
+    var photoPath []string
+    form, err := ctx.MultipartForm()
+    if err == nil && form.File["photo"] != nil {
+        photos := form.File["photo"]
+        if len(photos) < 5 {
+            ctx.JSON(http.StatusBadRequest, gin.H{"error": "Minimum 5 photos is required from the model"})
             return
         }
-        photoPath = dst
-    }
 
-    // Handle additional photos (array, up to 10)
-    var additionalPhotos []string
-    if form, err := ctx.MultipartForm(); err == nil {
-        if files, ok := form.File["additional_photos"]; ok {
-            for _, f := range files {
-                fileName := fmt.Sprintf("%s_%d_%s", hostessID, time.Now().UnixNano(), f.Filename)
-                dst := filepath.Join(uploadDir, fileName)
-                if err := ctx.SaveUploadedFile(f, dst); err != nil {
-                    ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save additional photo"})
-                    return
-                }
-                additionalPhotos = append(additionalPhotos, dst)
+        for _, file := range photos {
+            path := fmt.Sprintf("%s/%d_%s", uploadDir, time.Now().UnixNano(), file.Filename)
+            if err := ctx.SaveUploadedFile(file, path); err != nil {
+                ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to photo"})
+                return
             }
+            photoPath = append(photoPath, path)
         }
+    } else {
+        ctx.JSON(http.StatusBadRequest, gin.H{"error": "No photos where detected. Photos are required"})
+        return
     }
 
     query := `
@@ -148,15 +169,15 @@ func AddHostessExperience(ctx *gin.Context) {
             hostess_id, work_experience, languages, skills, availability,
             preferred_events, previous_hostess_work, reference_contact,
             height, weight, hair_color, eye_color,
-            photo, additional_photos,
+            photo,
             social_instagram, social_facebook, social_twitter, social_linkedin
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
     `
-    _, err := database.DB.Exec(query,
+    _, err = database.DB.Exec(query,
         hostessID, workExperience, pq.Array(languages), pq.Array(skills), availability,
         pq.Array(preferredEvents), previousHostessWork, referencesText,
         height, weight, hairColor, eyeColor,
-        photoPath, pq.Array(additionalPhotos),
+        pq.Array(photoPath),
         socialInstagram, socialFacebook, socialTwitter, socialLinkedin,
     )
 
@@ -214,7 +235,7 @@ func AdminGetAllHostesses(ctx *gin.Context) {
             h.created_at, h.updated_at,
             he.work_experience, he.languages, he.skills, he.availability, he.preferred_events,
             he.previous_hostess_work, he.reference_contact, he.height, he.weight, 
-            he.hair_color, he.eye_color, he.photo, he.additional_photos,
+            he.hair_color, he.eye_color, he.photo,
             he.social_instagram, he.social_facebook, he.social_twitter, he.social_linkedin,
             hd.document_issuer_country, hd.document_type, hd.document_front, hd.document_back,
             hic.selfie_with_id, hic.verified as identity_verified,
@@ -267,7 +288,7 @@ func AdminGetAllHostesses(ctx *gin.Context) {
             selfieWithID sql.NullString
             identityVerified sql.NullBool
             userFullname, userEmail, userPhone sql.NullString
-            languages, skills, preferredEvents, additionalPhotos pq.StringArray
+            languages, skills, preferredEvents pq.StringArray
         )
 
         err := rows.Scan(
@@ -276,7 +297,7 @@ func AdminGetAllHostesses(ctx *gin.Context) {
             &registrationStep, &deleted, &emergencyName, &emergencyRel, &emergencyPhone,
             &createdAt, &updatedAt, &workExperience, &languages, &skills, &availability,
             &preferredEvents, &previousWork, &referenceContact, &height, &weight,
-            &hairColor, &eyeColor, &photo, &additionalPhotos, &socialInstagram,
+            &hairColor, &eyeColor, &photo, &socialInstagram,
             &socialFacebook, &socialTwitter, &socialLinkedin, &docIssuerCountry,
             &docType, &docFront, &docBack, &selfieWithID, &identityVerified,
             &userFullname, &userEmail, &userPhone,
@@ -328,7 +349,6 @@ func AdminGetAllHostesses(ctx *gin.Context) {
                 "hair_color": hairColor.String,
                 "eye_color": eyeColor.String,
                 "photo": photo.String,
-                "additional_photos": additionalPhotos,
                 "social_instagram": socialInstagram.String,
                 "social_facebook": socialFacebook.String,
                 "social_twitter": socialTwitter.String,
@@ -390,7 +410,7 @@ func AdminGetHostessById(ctx *gin.Context) {
             h.created_at, h.updated_at,
             he.work_experience, he.languages, he.skills, he.availability, he.preferred_events,
             he.previous_hostess_work, he.reference_contact, he.height, he.weight, 
-            he.hair_color, he.eye_color, he.photo, he.additional_photos,
+            he.hair_color, he.eye_color, he.photo,
             he.social_instagram, he.social_facebook, he.social_twitter, he.social_linkedin,
             hd.document_issuer_country, hd.document_type, hd.document_front, hd.document_back,
             hic.selfie_with_id, hic.verified as identity_verified,
@@ -417,7 +437,7 @@ func AdminGetHostessById(ctx *gin.Context) {
         selfieWithID sql.NullString
         identityVerified sql.NullBool
         userFullname, userEmail, userPhone sql.NullString
-        languages, skills, preferredEvents, additionalPhotos pq.StringArray
+        languages, skills, preferredEvents pq.StringArray
     )
 
     err := database.DB.QueryRow(query, hostessID).Scan(
@@ -426,7 +446,7 @@ func AdminGetHostessById(ctx *gin.Context) {
         &registrationStep, &deleted, &emergencyName, &emergencyRel, &emergencyPhone,
         &createdAt, &updatedAt, &workExperience, &languages, &skills, &availability,
         &preferredEvents, &previousWork, &referenceContact, &height, &weight,
-        &hairColor, &eyeColor, &photo, &additionalPhotos, &socialInstagram,
+        &hairColor, &eyeColor, &photo, &socialInstagram,
         &socialFacebook, &socialTwitter, &socialLinkedin, &docIssuerCountry,
         &docType, &docFront, &docBack, &selfieWithID, &identityVerified,
         &userFullname, &userEmail, &userPhone,
@@ -479,7 +499,6 @@ func AdminGetHostessById(ctx *gin.Context) {
             "hair_color": hairColor.String,
             "eye_color": eyeColor.String,
             "photo": photo.String,
-            "additional_photos": additionalPhotos,
             "social_instagram": socialInstagram.String,
             "social_facebook": socialFacebook.String,
             "social_twitter": socialTwitter.String,
@@ -503,17 +522,22 @@ func AdminGetHostessById(ctx *gin.Context) {
 }
 
 // Admin endpoint to approve or reject a hostess
-func AdminApproveRejectHostess(ctx *gin.Context) {
+// Separate handler for approve hostess
+func AdminApproveHostess(ctx *gin.Context) {
     hostessID := ctx.Param("id")
-    action := ctx.Param("action") // approve or reject
+    handleHostessStatusUpdate(ctx, hostessID, "approved")
+}
 
+// Separate handler for reject hostess  
+func AdminRejectHostess(ctx *gin.Context) {
+    hostessID := ctx.Param("id")
+    handleHostessStatusUpdate(ctx, hostessID, "rejected")
+}
+
+// Common function for hostess status update
+func handleHostessStatusUpdate(ctx *gin.Context, hostessID string, newStatus string) {
     if hostessID == "" {
         ctx.JSON(http.StatusBadRequest, gin.H{"error": "Hostess ID is required"})
-        return
-    }
-
-    if action != "approve" && action != "reject" {
-        ctx.JSON(http.StatusBadRequest, gin.H{"error": "Action must be 'approve' or 'reject'"})
         return
     }
 
@@ -541,16 +565,12 @@ func AdminApproveRejectHostess(ctx *gin.Context) {
     var req struct {
         AdminNotes string `json:"admin_notes"`
     }
-    ctx.ShouldBindJSON(&req)
-
-    // Update hostess status
-    var newStatus string
-    if action == "approve" {
-        newStatus = "approved"
-    } else {
-        newStatus = "rejected"
+    if err := ctx.ShouldBindJSON(&req); err != nil {
+        // It's okay if no JSON body is provided
+        req.AdminNotes = ""
     }
 
+    // Update hostess status
     query := `
         UPDATE hostesses 
         SET status = $1, updated_at = NOW() 
@@ -816,4 +836,340 @@ func UploadHostessIdentityCheck(ctx *gin.Context) {
     _, _ = database.DB.Exec(`UPDATE hostesses SET registration_step = 4, status = 'under_review' WHERE id = $1`, hostessID)
 
     ctx.JSON(http.StatusOK, gin.H{"message": "✅ Identity check submitted successfully!"})
+}
+
+
+// Get approved hostesses
+func GetApprovedHostesses(ctx *gin.Context) {
+    query := `
+        SELECT 
+            h.id, h.user_id, h.first_name, h.last_name, h.username, h.email, 
+            h.whatsapp, h.date_of_birth, h.gender, h.nationality, h.street, 
+            h.city, h.residence_country, h.status, h.registration_step, h.deleted,
+            h.emergency_contact_name, h.emergency_contact_relationship, h.emergency_contact_phone,
+            h.created_at, h.updated_at,
+
+            he.work_experience, he.languages, he.skills, he.availability, he.preferred_events, 
+            he.previous_hostess_work, he.reference_contact, 
+            he.height, he.weight, he.hair_color, he.eye_color, he.photo,
+            he.social_instagram, he.social_facebook, he.social_twitter, he.social_linkedin,
+
+            hd.document_issuer_country, hd.document_type, hd.document_front, hd.document_back,
+            hic.selfie_with_id, hic.verified as identity_verified
+
+        FROM hostesses h
+        LEFT JOIN hostess_experience he ON h.id = he.hostess_id
+        LEFT JOIN hostess_documents hd ON h.id = hd.hostess_id
+        LEFT JOIN hostess_identity_check hic ON h.id = hic.hostess_id
+        WHERE h.status = 'approved' AND h.deleted = FALSE
+        ORDER BY h.created_at DESC
+    `
+    rows, err := database.DB.Query(query)
+    if err != nil {
+        ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch approved hostesses"})
+        fmt.Println("Database query error:", err)
+        return
+    }
+    defer rows.Close()
+
+    var hostesses []gin.H
+
+    for rows.Next() {
+        var (
+            id, userID, firstName, lastName, username, email, whatsapp string
+            dateOfBirth, gender, nationality, street, city, residenceCountry, status string
+            createdAt, updatedAt time.Time
+            registrationStep int
+            deleted bool
+
+            emergencyName, emergencyRelationship, emergencyPhone sql.NullString
+
+            workExperience, availability, previousWork, referenceContact sql.NullString
+            height, weight, hairColor, eyeColor sql.NullString
+            socialInstagram, socialFacebook, socialTwitter, socialLinkedin sql.NullString
+            photo sql.NullString
+            languages, skills, preferredEvents pq.StringArray
+
+            docIssuerCountry, docType, docFront, docBack sql.NullString
+            selfieWithID sql.NullString
+            identityVerified sql.NullBool
+        )
+
+        err := rows.Scan(
+            &id, &userID, &firstName, &lastName, &username, &email, &whatsapp,
+            &dateOfBirth, &gender, &nationality, &street, &city, &residenceCountry,
+            &status, &registrationStep, &deleted,
+            &emergencyName, &emergencyRelationship, &emergencyPhone,
+            &createdAt, &updatedAt,
+
+            &workExperience, &languages, &skills, &availability, &preferredEvents,
+            &previousWork, &referenceContact,
+            &height, &weight, &hairColor, &eyeColor, &photo,
+            &socialInstagram, &socialFacebook, &socialTwitter, &socialLinkedin,
+
+            &docIssuerCountry, &docType, &docFront, &docBack,
+            &selfieWithID, &identityVerified,
+        )
+        if err != nil {
+            fmt.Println("Row scan error:", err)
+            continue
+        }
+
+        // Helper functions
+        getStringValue := func(value sql.NullString, defaultValue string) string {
+            if value.Valid && value.String != "" {
+                return value.String
+            }
+            return defaultValue
+        }
+        
+        getBoolValue := func(value sql.NullBool, defaultValue bool) bool {
+            if value.Valid {
+                return value.Bool
+            }
+            return defaultValue
+        }
+
+        // Parse photos into array (similar to models)
+        var photoArray []string
+        if photo.Valid && photo.String != "" {
+            photoStr := photo.String
+            
+            // Handle PostgreSQL array format: {photo1.jpg,photo2.jpg,photo3.jpg}
+            if strings.HasPrefix(photoStr, "{") && strings.HasSuffix(photoStr, "}") {
+                cleaned := photoStr[1:len(photoStr)-1] // Remove curly braces
+                photos := strings.Split(cleaned, ",")
+                for _, p := range photos {
+                    cleanedPhoto := strings.TrimSpace(p)
+                    cleanedPhoto = strings.Trim(cleanedPhoto, "\"")
+                    if cleanedPhoto != "" {
+                        photoArray = append(photoArray, cleanedPhoto)
+                    }
+                }
+            } else if strings.Contains(photoStr, ",") {
+                // Handle comma-separated string
+                photos := strings.Split(photoStr, ",")
+                for _, p := range photos {
+                    cleanedPhoto := strings.TrimSpace(p)
+                    if cleanedPhoto != "" {
+                        photoArray = append(photoArray, cleanedPhoto)
+                    }
+                }
+            } else {
+                // Single photo
+                photoArray = []string{strings.TrimSpace(photoStr)}
+            }
+        }
+
+        // Get first photo for main field
+        var firstPhoto string
+        if len(photoArray) > 0 {
+            firstPhoto = photoArray[0]
+        } else {
+            firstPhoto = "/uploads/default.jpg"
+        }
+
+        hostess := gin.H{
+            "id":                id,
+            "user_id":           userID,
+            "first_name":        firstName,
+            "last_name":         lastName,
+            "username":          username,
+            "email":             email,
+            "whatsapp":          whatsapp,
+            "date_of_birth":     dateOfBirth,
+            "gender":            gender,
+            "nationality":       nationality,
+            "street":            street,
+            "city":              city,
+            "residence_country": residenceCountry,
+            "status":            status,
+            "registration_step": registrationStep,
+            "deleted":           deleted,
+            "created_at":        createdAt,
+            "updated_at":        updatedAt,
+
+            "emergency_contact": gin.H{
+                "name":         getStringValue(emergencyName, ""),
+                "relationship": getStringValue(emergencyRelationship, ""),
+                "phone":        getStringValue(emergencyPhone, ""),
+            },
+
+            "experience": gin.H{
+                "work_experience":        getStringValue(workExperience, ""),
+                "languages":              languages,
+                "skills":                 skills,
+                "availability":           getStringValue(availability, ""),
+                "preferred_events":       preferredEvents,
+                "previous_hostess_work":  getStringValue(previousWork, ""),
+                "reference_contact":      getStringValue(referenceContact, ""),
+                "height":                 getStringValue(height, ""),
+                "weight":                 getStringValue(weight, ""),
+                "hair_color":             getStringValue(hairColor, ""),
+                "eye_color":              getStringValue(eyeColor, ""),
+                "photo":                  photoArray, // All photos as array
+                "social_instagram":       getStringValue(socialInstagram, ""),
+                "social_facebook":        getStringValue(socialFacebook, ""),
+                "social_twitter":         getStringValue(socialTwitter, ""),
+                "social_linkedin":        getStringValue(socialLinkedin, ""),
+            },
+
+            "documents": gin.H{
+                "document_issuer_country": getStringValue(docIssuerCountry, ""),
+                "document_type":           getStringValue(docType, ""),
+                "document_front":          getStringValue(docFront, ""),
+                "document_back":           getStringValue(docBack, ""),
+            },
+
+            "identity_check": gin.H{
+                "selfie_with_id": getStringValue(selfieWithID, ""),
+                "verified":       getBoolValue(identityVerified, false),
+            },
+
+            "photo": firstPhoto, // Only the first photo for the main field
+        }
+
+        hostesses = append(hostesses, hostess)
+    }
+
+    ctx.JSON(http.StatusOK, gin.H{
+        "hostesses": hostesses,
+        "count":     len(hostesses),
+    })
+}
+
+
+// AdminUpdateHostess updates hostess information
+func AdminUpdateHostess(ctx *gin.Context) {
+    hostessID := ctx.Param("id")
+    handleHostessUpdate(ctx, hostessID)
+}
+
+// Common function for hostess update
+func handleHostessUpdate(ctx *gin.Context, hostessID string) {
+    if hostessID == "" {
+        ctx.JSON(http.StatusBadRequest, gin.H{"error": "Hostess ID is required"})
+        return
+    }
+
+    // Verify the hostess exists and is not deleted
+    var exists bool
+    err := database.DB.QueryRow(`
+        SELECT EXISTS(SELECT 1 FROM hostesses WHERE id = $1 AND deleted = FALSE)
+    `, hostessID).Scan(&exists)
+
+    if err != nil || !exists {
+        ctx.JSON(http.StatusNotFound, gin.H{"error": "Hostess not found"})
+        return
+    }
+
+    // Parse request body
+    var req struct {
+        FirstName         string `json:"first_name"`
+        LastName          string `json:"last_name"`
+        Username          string `json:"username"`
+        Email             string `json:"email"`
+        WhatsApp          string `json:"whatsapp"`
+        DateOfBirth       string `json:"date_of_birth"`
+        Gender            string `json:"gender"`
+        Nationality       string `json:"nationality"`
+        Street            string `json:"street"`
+        City              string `json:"city"`
+        ResidenceCountry  string `json:"residence_country"`
+        Status            string `json:"status"`
+        
+        Measurements struct {
+            Experience     string `json:"experience"`
+            Height         int    `json:"height"`
+            Weight         int    `json:"weight"`
+            Hips           int    `json:"hips"`
+            Waist          int    `json:"waist"`
+            HairColor      string `json:"hair_color"`
+            EyeColor       string `json:"eye_color"`
+            SocialInstagram string `json:"social_instagram"`
+            SocialFacebook  string `json:"social_facebook"`
+            SocialTwitter   string `json:"social_twitter"`
+            SocialLinkedin  string `json:"social_linkedin"`
+        } `json:"measurements"`
+        
+        Documents struct {
+            DocumentIssuerCountry string `json:"document_issuer_country"`
+            DocumentType         string `json:"document_type"`
+        } `json:"documents"`
+    }
+
+    if err := ctx.ShouldBindJSON(&req); err != nil {
+        ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data"})
+        return
+    }
+
+    // Start transaction
+    tx, err := database.DB.Begin()
+    if err != nil {
+        ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start transaction"})
+        return
+    }
+    defer tx.Rollback()
+
+    // Update main hostess table
+    _, err = tx.Exec(`
+        UPDATE hostesses 
+        SET first_name = $1, last_name = $2, username = $3, email = $4, 
+            whatsapp = $5, date_of_birth = $6, gender = $7, nationality = $8,
+            street = $9, city = $10, residence_country = $11, status = $12,
+            updated_at = NOW()
+        WHERE id = $13
+    `, req.FirstName, req.LastName, req.Username, req.Email, req.WhatsApp,
+        req.DateOfBirth, req.Gender, req.Nationality, req.Street, req.City,
+        req.ResidenceCountry, req.Status, hostessID)
+
+    if err != nil {
+        ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update hostess basic info"})
+        return
+    }
+
+    // Update measurements
+    _, err = tx.Exec(`
+        UPDATE hostess_measurements 
+        SET experience = $1, height = $2, weight = $3, hips = $4, waist = $5,
+            hair_color = $6, eye_color = $7, social_instagram = $8, 
+            social_facebook = $9, social_twitter = $10, social_linkedin = $11,
+            updated_at = NOW()
+        WHERE hostess_id = $12
+    `, req.Measurements.Experience, req.Measurements.Height, req.Measurements.Weight,
+        req.Measurements.Hips, req.Measurements.Waist, req.Measurements.HairColor,
+        req.Measurements.EyeColor, req.Measurements.SocialInstagram,
+        req.Measurements.SocialFacebook, req.Measurements.SocialTwitter,
+        req.Measurements.SocialLinkedin, hostessID)
+
+    if err != nil {
+        ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update hostess measurements"})
+        return
+    }
+
+    // Update documents
+    _, err = tx.Exec(`
+        UPDATE hostess_documents 
+        SET document_issuer_country = $1, document_type = $2, updated_at = NOW()
+        WHERE hostess_id = $3
+    `, req.Documents.DocumentIssuerCountry, req.Documents.DocumentType, hostessID)
+
+    if err != nil {
+        ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update hostess documents"})
+        return
+    }
+
+    // Commit transaction
+    if err := tx.Commit(); err != nil {
+        ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit changes"})
+        return
+    }
+
+    // Log the action
+    fmt.Printf("Hostess %s updated by admin\n", hostessID)
+
+    ctx.JSON(http.StatusOK, gin.H{
+        "message":    "Hostess updated successfully",
+        "hostess_id": hostessID,
+    })
 }

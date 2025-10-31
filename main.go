@@ -38,39 +38,64 @@ func main() {
 	router.POST("/login", handlers.LoginFunction)
 	router.POST("/contact", handlers.HandleContact)             // Contact form submission
 			 	
-	// middleware protects the route
-      protected := router.Group("/api", middlewares.AuthMiddleware())
+	// ===== USER PROTECTED ROUTES =====
+    protected := router.Group("/api", middlewares.AuthMiddleware())
 {
-      protected.GET("/account", handlers.GetAccountInfo)
-	  protected.POST("/models/create", handlers.CreateModel)
-	  protected.POST("/models/measurements", handlers.AddMeasurements)
-	  protected.POST("/models/documents", handlers.AddDocuments)
-	  protected.POST("/models/identity-check", handlers.UploadIdentityCheck)
-	  protected.GET("/models/progress", handlers.GetModelProgress)
+    protected.GET("/account", handlers.GetAccountInfo)
 
-	  protected.GET("/models/approved", handlers.GetApprovedModels)
-	  protected.DELETE("/models/:id", handlers.DeleteModel)
-	  protected.PUT("/models/:id", handlers.UpdateModel)
-	  protected.GET("/admin/models", handlers.AdminGetAllModels)
-	  protected.GET("/admin/models/:id", handlers.AdminGetModelById)
-	  protected.POST("/admin/models/:id/:action", handlers.AdminApproveRejectModel)
+    // For Models (User operations)
+    protected.POST("/models/create", handlers.CreateModel)
+    protected.POST("/models/measurements", handlers.AddMeasurements)
+    protected.POST("/models/documents", handlers.AddDocuments)
+    protected.POST("/models/identity-check", handlers.UploadIdentityCheck)
+    protected.GET("/models/progress", handlers.GetModelProgress)
+    protected.GET("/models/approved", handlers.GetApprovedModels)
+    protected.DELETE("/models/:id", handlers.DeleteModel)  // User can only delete their own
+    protected.PUT("/models/:id", handlers.UpdateModel)     // User can only update their own
 
-	  // For Hostesses
-	  protected.POST("/hostesses/create", handlers.CreateHostess)
-	  protected.POST("/hostesses/experience", handlers.AddHostessExperience)
-	  protected.POST("/hostesses/documents", handlers.AddHostessDocuments)
-	  protected.POST("/hostesses/identity-check", handlers.UploadHostessIdentityCheck)
-	  protected.GET("/hostesses/progress", handlers.GetHostessProgress)
-	  protected.DELETE("/hostesses/:id", handlers.DeleteHostess)
-	  protected.PUT("/hostesses/:id", handlers.UpdateHostess)
-	  protected.GET("/admin/hostesses", handlers.AdminGetAllHostesses)
-	  protected.GET("/admin/hostesses/:id", handlers.AdminGetHostessById)
-	  protected.POST("/admin/hostesses/:id/:action", handlers.AdminApproveRejectHostess)
-
-
+    // For Hostesses (User operations)
+    protected.POST("/hostesses/create", handlers.CreateHostess)
+    protected.POST("/hostesses/experience", handlers.AddHostessExperience)
+    protected.POST("/hostesses/documents", handlers.AddHostessDocuments)
+    protected.POST("/hostesses/identity-check", handlers.UploadHostessIdentityCheck)
+    protected.GET("/hostesses/progress", handlers.GetHostessProgress)
+    protected.DELETE("/hostesses/:id", handlers.DeleteHostess)  // User can only delete their own
+    protected.PUT("/hostesses/:id", handlers.UpdateHostess)     // User can only update their own
+    protected.GET("/hostesses/approved", handlers.GetApprovedHostesses)
 }
-  /////////////////// STATIC ROUTES /////////////////////
-	router.Static("/uploads", "./uploads") // so uploaded files can be accessed
+
+
+// ===== ADMIN PUBLIC ROUTES =====
+router.POST("/api/admin/register", handlers.AdminRegister)
+router.POST("/api/admin/login", handlers.AdminLogin)
+
+
+// ===== ADMIN PROTECTED ROUTES =====
+adminProtected := router.Group("/api/admin", handlers.AdminAuthMiddleware())
+{
+    adminProtected.GET("/profile", handlers.GetAdminProfile)
+    
+    // Admin Model Management
+    adminProtected.GET("/models", handlers.AdminGetAllModels)           // Get all models (admin view)
+    adminProtected.GET("/models/:id", handlers.AdminGetModelById)       // Get specific model
+    adminProtected.POST("/models/:id/approve", handlers.AdminApproveModel)
+	adminProtected.PUT("/models/:id", handlers.AdminUpdateModel)  
+	adminProtected.POST("/models/:id/reject", handlers.AdminRejectModel)
+    adminProtected.DELETE("/models/:id", handlers.AdminDeleteModel)     // Admin can delete any model
+    
+    // Admin Hostess Management  
+    adminProtected.GET("/hostesses", handlers.AdminGetAllHostesses)     // Get all hostesses (admin view)
+    adminProtected.GET("/hostesses/:id", handlers.AdminGetHostessById)  // Get specific hostess
+	 adminProtected.PUT("/hostesses/:id", handlers.AdminUpdateHostess) 
+    adminProtected.DELETE("/hostesses/:id", handlers.AdminDeleteHostess) // Admin can delete any hostess
+	adminProtected.POST("/hostesses/:id/approve", handlers.AdminApproveHostess)
+	adminProtected.POST("/hostesses/:id/reject", handlers.AdminRejectHostess)
+}
+
+// ===== STATIC ROUTES =====
+router.Static("/uploads", "./uploads") // so uploaded files can be accessed
+
+
 	
 	db := &database.Database{DB: database.DB}
 	db.InitDatabase()

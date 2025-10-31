@@ -122,8 +122,8 @@ func sendVerificationEmail(Email, otp string) error {
 
 	mailjetClient := mailjet.NewMailjetClient(apiKey, apiSecret)
 
-	subject := "Password Reset Request"
-	body := fmt.Sprintf("You requested a password reset. Use the code below to reset your password:\n\n%s", otp)
+	subject := "One Time Password (OTP) for Email Verification sign up"
+	body := fmt.Sprintf("You requested a One Time password to confirm your email and sign up. Use the code below to to continue with your registration:\n\n%s", otp)
 
 	messagesInfo := []mailjet.InfoMessagesV31{
 		{
